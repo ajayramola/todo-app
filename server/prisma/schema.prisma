@@ -11,7 +11,10 @@ model User {
   id       String @id @default(uuid())
   username String @unique
   password String // This will store the HASH, not real password
+  email      String    @unique  // <--- ADD THIS
+  messages   Message[] // <--- Add this line
   todos    Todo[]
+  conversations Participant[]
 }
 
 model Todo {
@@ -23,4 +26,41 @@ model Todo {
   // Link Todo to a User
   userId    String
   user      User     @relation(fields: [userId], references: [id])
+}
+
+
+
+model Conversation {
+  id        String   @id @default(uuid())
+  name      String?  // Optional: Null for DM, "Project X" for Group
+  isGroup   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  participants Participant[]
+  messages     Message[]
+}
+
+model Participant {
+  id             String       @id @default(uuid())
+  userId         String
+  conversationId String
+  joinedAt       DateTime     @default(now())
+
+  user           User         @relation(fields: [userId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@unique([userId, conversationId]) // User can't join same chat twice
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  content        String       @db.Text
+  isCode         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
 }
