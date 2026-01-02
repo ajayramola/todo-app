@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    /* Base Options */
+    "target": "es2016",
+    "module": "commonjs",             /* <--- Crucial for ts-node */
+    "moduleResolution": "node",       /* <--- Fixes import paths */
+    "esModuleInterop": true,          /* <--- Allows "import express from 'express'" */
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    
+    /* Disable the setting causing your specific error */
+    "verbatimModuleSyntax": false,    
+    
+    /* Output */
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}
