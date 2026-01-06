@@ -8,12 +8,16 @@ datasource db {
 }
 
 model User {
-  id       String @id @default(uuid())
-  username String @unique
-  password String // This will store the HASH, not real password
-  email      String    @unique  // <--- ADD THIS
-  messages   Message[] // <--- Add this line
-  todos    Todo[]
+  id            String        @id @default(uuid())
+  username      String        @unique
+  password      String
+  email         String        @unique
+  isOnline      Boolean       @default(false) // 🟢 Online Status
+  createdAt     DateTime      @default(now())
+
+  // Relationships
+  messages      Message[]
+  todos         Todo[]
   conversations Participant[]
 }
 
@@ -23,19 +27,16 @@ model Todo {
   done      Boolean  @default(false)
   createdAt DateTime @default(now())
   
-  // Link Todo to a User
   userId    String
   user      User     @relation(fields: [userId], references: [id])
 }
 
-
-
 model Conversation {
-  id        String   @id @default(uuid())
-  name      String?  // Optional: Null for DM, "Project X" for Group
-  isGroup   Boolean  @default(false)
-  createdAt DateTime @default(now())
-
+  id           String        @id @default(uuid())
+  name         String?       // 👥 Group Name (e.g. "Family"). Null if direct message.
+  isGroup      Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  
   participants Participant[]
   messages     Message[]
 }
@@ -49,7 +50,7 @@ model Participant {
   user           User         @relation(fields: [userId], references: [id])
   conversation   Conversation @relation(fields: [conversationId], references: [id])
 
-  @@unique([userId, conversationId]) // User can't join same chat twice
+  @@unique([userId, conversationId]) // Ensures a user isn't in the same chat twice
 }
 
 model Message {
@@ -57,7 +58,9 @@ model Message {
   content        String       @db.Text
   isCode         Boolean      @default(false)
   createdAt      DateTime     @default(now())
-  
+
+  type           String       @default("text") 
+  attachment     String?      @db.LongText
   userId         String
   user           User         @relation(fields: [userId], references: [id])
 

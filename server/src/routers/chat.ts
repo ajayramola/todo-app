@@ -2,17 +2,22 @@ import { z } from 'zod';
 import { router, protectedProcedure, publicProcedure } from '../trpc';
 import { observable } from '@trpc/server/observable';
 import { EventEmitter } from 'events';
-import { TRPCError } from '@trpc/server';
 
+// Event Emitter for Real-time chat
 const ee = new EventEmitter();
 
 export const chatRouter = router({
 
-  // 1. GET ALL USERS (To select who to chat with)
+  // 1. GET ALL USERS (For New Chat List)
   getAllUsers: protectedProcedure.query(async ({ ctx }) => {
     return await ctx.prisma.user.findMany({
-      where: { id: { not: ctx.userId } }, // Don't show myself
-      select: { id: true, username: true }
+      where: { id: { not: ctx.user.id } }, // Don't show myself
+      select: { 
+        id: true, 
+        username: true, 
+        isOnline: true // 🟢 Fetch Online Status
+      },
+      orderBy: { username: 'asc' }
     });
   }),
 
@@ -20,30 +25,31 @@ export const chatRouter = router({
   getMyChats: protectedProcedure.query(async ({ ctx }) => {
     return await ctx.prisma.conversation.findMany({
       where: {
-        participants: { some: { userId: ctx.userId } }
+        participants: { some: { userId: ctx.user.id } }
       },
       include: {
         participants: {
-          include: { user: { select: { id: true, username: true } } }
+          include: { user: { select: { id: true, username: true, isOnline: true } } }
         },
         messages: {
-          take: 1,
+          take: 1, // Get only the last message for preview
           orderBy: { createdAt: 'desc' }
         }
-      }
+      },
+      orderBy: { createdAt: 'desc' } // Show recent chats first
     });
   }),
 
-  // 3. CREATE PRIVATE CHAT (Start DM)
+  // 3. CREATE PRIVATE CHAT (Direct Message)
   createPrivateChat: protectedProcedure
     .input(z.object({ otherUserId: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      // Check if chat already exists
+      // Check if DM already exists
       const existing = await ctx.prisma.conversation.findFirst({
         where: {
           isGroup: false,
           participants: {
-            every: { userId: { in: [ctx.userId, input.otherUserId] } }
+            every: { userId: { in: [ctx.user.id, input.otherUserId] } }
           }
         }
       });
@@ -56,7 +62,7 @@ export const chatRouter = router({
           isGroup: false,
           participants: {
             create: [
-              { userId: ctx.userId },
+              { userId: ctx.user.id },
               { userId: input.otherUserId }
             ]
           }
@@ -64,9 +70,12 @@ export const chatRouter = router({
       });
     }),
 
-  // 4. CREATE GROUP CHAT
-  createGroupChat: protectedProcedure
-    .input(z.object({ name: z.string(), userIds: z.array(z.string()) }))
+  // 4. CREATE GROUP CHAT (👥 New Feature)
+  createGroup: protectedProcedure
+    .input(z.object({ 
+      name: z.string(), 
+      participantIds: z.array(z.string()) 
+    }))
     .mutation(async ({ input, ctx }) => {
       return await ctx.prisma.conversation.create({
         data: {
@@ -74,38 +83,51 @@ export const chatRouter = router({
           name: input.name,
           participants: {
             create: [
-              { userId: ctx.userId }, // Add creator
-              ...input.userIds.map(id => ({ userId: id })) // Add others
+              { userId: ctx.user.id }, // Add Me (Creator)
+              ...input.participantIds.map(id => ({ userId: id })) // Add Friends
             ]
           }
-        }
+        },
+        include: { participants: { include: { user: true } } }
       });
     }),
 
-  // 5. SEND MESSAGE (To specific Room)
+  // 5. SEND MESSAGE (Supports Text & Images)
   sendMessage: protectedProcedure
     .input(z.object({ 
       conversationId: z.string(),
-      content: z.string(),
-      isCode: z.boolean().default(false)
+      content: z.string().optional(),
+      isCode: z.boolean().default(false),
+      // 📷 New Inputs for Files
+      type: z.enum(['text', 'image']).default('text'),
+      attachment: z.string().optional(), // Base64 string
     }))
     .mutation(async ({ input, ctx }) => {
       const message = await ctx.prisma.message.create({
         data: {
-          content: input.content,
-          isCode: input.isCode,
           conversationId: input.conversationId,
-          userId: ctx.userId,
+          userId: ctx.user.id,
+          // If it's an image, content can be optional description or just "Sent an image"
+          content: input.content || (input.type === 'image' ? 'Sent an image' : ''),
+          isCode: input.isCode,
+          type: input.type,
+          attachment: input.attachment,
         },
         include: { user: true }
       });
 
-      // Broadcast to that specific room ID
+      // Update Conversation "UpdatedAt" timestamp (so it moves to top of list)
+      await ctx.prisma.conversation.update({
+        where: { id: input.conversationId },
+        data: { createdAt: new Date() }
+      });
+
+      // Broadcast to Room
       ee.emit(`room:${input.conversationId}`, message);
       return message;
     }),
 
-  // 6. GET HISTORY (For specific Room)
+  // 6. GET HISTORY (Chat Room Messages)
   getHistory: protectedProcedure
     .input(z.object({ conversationId: z.string() }))
     .query(async ({ input, ctx }) => {
@@ -116,7 +138,7 @@ export const chatRouter = router({
       });
     }),
 
-  // 7. LIVE SUBSCRIPTION (Listen to Room)
+  // 7. REAL-TIME SUBSCRIPTION
   onMessage: publicProcedure
     .input(z.object({ conversationId: z.string() }))
     .subscription(({ input }) => {

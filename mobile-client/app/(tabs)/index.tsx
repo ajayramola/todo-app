@@ -1,98 +1,86 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+// mobile-client/app/(tabs)/index.tsx
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { trpc } from '../../src/utils/trpc';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+export default function TodoScreen() {
+  const router = useRouter();
+  const [text, setText] = useState('');
+  
+  // Use 'useUtils' for tRPC v11 OR 'useContext' for tRPC v10
+  // Since we are fixing for your setup, we assume standard context:
+  const utils = trpc.useContext(); 
+  
+  const todos = trpc.getTodos.useQuery();
+  const addTodo = trpc.addTodo.useMutation({ 
+    onSuccess: () => { 
+      utils.getTodos.invalidate(); 
+      setText(''); 
+    } 
+  });
+  const toggleTodo = trpc.toggleTodo.useMutation({ onSuccess: () => utils.getTodos.invalidate() });
+  const deleteTodo = trpc.deleteTodo.useMutation({ onSuccess: () => utils.getTodos.invalidate() });
 
-export default function HomeScreen() {
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem('token');
+    router.replace('/');
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
+    <View style={styles.container}>
+      <View style={styles.inputRow}>
+        <TextInput 
+          style={styles.input} 
+          placeholder="Add Task..." 
+          placeholderTextColor="#94a3b8" 
+          value={text} 
+          onChangeText={setText} 
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
-
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+        <TouchableOpacity 
+          onPress={() => { if(text) addTodo.mutate({ text }); }} 
+          style={styles.addBtn}
+        >
+          <Text style={styles.addBtnText}>+</Text>
+        </TouchableOpacity>
+      </View>
+      
+      <FlatList
+        data={todos.data}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={styles.todoItem}>
+            <TouchableOpacity 
+              onPress={() => toggleTodo.mutate({ id: item.id, done: !item.done })} 
+              style={{flex:1}}
+            >
+              <Text style={[styles.todoText, item.done && styles.doneText]}>{item.text}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => deleteTodo.mutate({ id: item.id })}>
+              <Text style={styles.delText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
+      
+      <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+        <Text style={styles.logoutText}>Logout</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+  container: { flex: 1, padding: 20, backgroundColor: '#0f172a' },
+  inputRow: { flexDirection: 'row', marginBottom: 20 },
+  input: { flex: 1, backgroundColor: '#1e293b', color: '#fff', padding: 12, borderRadius: 8, marginRight: 10 },
+  addBtn: { backgroundColor: '#6366f1', width: 50, justifyContent: 'center', alignItems: 'center', borderRadius: 8 },
+  addBtnText: { color: '#fff', fontSize: 24 },
+  todoItem: { flexDirection: 'row', backgroundColor: '#1e293b', padding: 15, borderRadius: 8, marginBottom: 10, alignItems: 'center' },
+  todoText: { color: '#fff', fontSize: 16 },
+  doneText: { textDecorationLine: 'line-through', color: '#64748b' },
+  delText: { color: '#ef4444', fontSize: 18, marginLeft: 10 },
+  logoutBtn: { marginTop: 20, alignSelf: 'center', marginBottom: 20 },
+  logoutText: { color: '#ef4444' }
 });
